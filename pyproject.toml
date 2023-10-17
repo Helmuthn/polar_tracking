@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["polar_tracking"]
+
+[project]
+name = "polar_tracking"
+version = "0.0.1"
+authors = [
+  { name="Helmuth Naumer", email="hnaumer2@illinois.edu" },
+]
+description = "Tracking Linear Dynamics With A Decomposed Prior"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Intended Audience :: Science/Research",
+    "Development Status :: 2 - Pre-Alpha",
+]
+dependencies = [
+    "jax>=0.4.3",
+    "jaxtyping"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/helmuthn/polar_tracking"
+"Documentation" = "https://www.helmuthnaumer.com/polar_tracking/"
+"Bug Tracker" = "https://github.com/helmuthn/polar_tracking/issues"
+
+[tool.ruff]
+ignore = ["F722"]
