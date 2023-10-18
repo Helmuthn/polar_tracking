@@ -1,0 +1,42 @@
+site_name: Polar Tracking
+
+theme:
+  name: material
+  features:
+    - navigation.sections  
+    - toc.integrate  
+    - header.autohide
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    primary: blue grey
+
+repo_url: https://github.com/Helmuthn/polar_tracking
+
+extra_javascript:
+  - javascripts/katex.js 
+  - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.7/katex.min.js  
+  - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.7/contrib/auto-render.min.js
+
+extra_css:
+  - _static/custom.css
+  - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.7/katex.min.css
+
+markdown_extensions:
+    - admonition
+    - toc:
+        permalink: "⚓"  
+        toc_depth: 4
+
+plugins:
+- search
+- autorefs  
+- mkdocstrings:
+    handlers:
+      python:
+        options:
+          separate_signature: true
+          show_signature_annotations: true
+          show_root_heading: true  
+          show_root_full_path: false  
+          heading_level: 4
