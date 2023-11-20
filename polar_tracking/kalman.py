@@ -1,4 +1,4 @@
-"""Extended Kalman filters for tracking linear system dynamics.
+"""Kalman filters for tracking linear system dynamics.
 
 This module contains implementation of extended Kalman filters applied
 to two different types of dynamics.
@@ -9,51 +9,268 @@ element-wise.
 For convenience, it additionally includes a standard Kalman filter.
 """
 
+from typing import Callable
 import numpy as np
 import numpy.typing as npt
 
-class ExtendedKalmanFilter:
-    """Extended Kalman Filter for application to nonlinear systems
+class StateSpaceModel:
+    """Representation of a state space model.
 
-    Represents and extended kalman filter constructed through a linearization
-    of a nonlinear system.
+    Represents a state space model of a system.
     """
+    def __init__(self,
+                 transition_operator:  Callable[[npt.NDArray], npt.NDArray],
+                 transition_jacobian:  Callable[[npt.NDArray], npt.NDArray],
+                 measurement_operator: Callable[[npt.NDArray], npt.NDArray],
+                 measurement_jacobian: Callable[[npt.NDArray], npt.NDArray],
+                 noise_covariance_system: npt.NDArray,
+                 noise_covariance_measurement: npt.NDArray):
+        self.transition_operator = transition_operator
+        self.transition_jacobian = transition_jacobian
+        self.measurement_operator = measurement_operator
+        self.measurement_jacobian = measurement_jacobian
+        self.noise_covariance_system = noise_covariance_system
+        self.noise_covariance_measurement = noise_covariance_measurement
+
+
+    def next_state(self, current_state: npt.NDArray) -> npt.NDArray:
+        """Given the previous state, return the next state
+
+        Args:
+            current_state: The current state vector
+
+        Returns:
+            The state vector at the next timestep
+        """
+        return self.transition_operator(current_state)
+
+    
+    def observe(self, current_state: npt.NDArray) -> npt.NDArray:
+        """Given the current state, return the noise-free observation
+
+        Args:
+            current_state: The current state vector
+
+        Returns:
+            The ideal observation vector.
+        """
+        return self.measurement_operator(current_state)
+
+
+    def get_transition_jacobian(self, current_state: npt.NDArray) -> npt.NDArray:
+        """Return the linearization of the transition operator.
+
+        Compute and return the linearization of the transition operator
+        in the neighborhood of a given state value.
+
+        Args:
+            current_state: The current state vector
+            
+        Returns:
+            A matrix representation of the Jacobian.
+        """
+        return self.transition_jacobian(current_state)
+
+
+    def get_observation_jacobian(self, current_state: npt.NDArray) -> npt.NDArray:
+        """Return the linearization of the observation operator.
+
+        Compute and return the linearization of the observation operator
+        in the neighborhood of a given state value.
+
+        Args:
+            current_state: The current state vector
+            
+        Returns:
+            A matrix representation of the Jacobian.
+        """
+        return self.measurement_jacobian(current_state)
+
+
+    def kalman_gain(self, state_prediction, prediction_covariance) -> npt.NDArray:
+        """Computes the kalman gain given the prediction covariance
+
+        Args:
+            prediction_covariance: Covariance matrix for current stat prediction
+
+        Returns:
+            The computed Kalman gain
+        """
+        measurement_operator = self.get_observation_jacobian(state_prediction)
+
+        innovation_covariance = measurement_operator \
+                                    @ prediction_covariance \
+                                    @ measurement_operator.T \
+                                    + self.noise_covariance_measurement
+
+        kalman_gain = prediction_covariance \
+                        @ measurement_operator.T \
+                        @ np.linalg.inv(innovation_covariance)
+
+        return kalman_gain
+
+
+class LinearStateSpaceModel(StateSpaceModel):
+    """Specialized model for linear systems"""
 
     def __init__(self,
-                 transition_operator: npt.NDArray,
+                 transition_operator:  npt.NDArray,
                  measurement_operator: npt.NDArray,
                  noise_covariance_system: npt.NDArray,
-                 noise_covariance_measurement: npt.NDArray,
-                 state_mean: npt.NDArray,
-                 state_covariance: npt.NDArray):
-        """Initialize a Kalman Filter given system dynamics and initialization
+                 noise_covariance_measurement: npt.NDArray):
+        """Construct a new linear state space model
 
         Args:
             transition_operator: State Transition Operator, d by d 
             measurement_operator: Measurement Operator, k by d 
             noise_covariance_system: System noise covariance, d by d 
             noise_covariance_measurement: Measurement noise covariance, k by k
-            state_mean: Initial state estimate, length d
-            state_covariance: Initial estimate covariance, d by d
-            
+
         Raises:
-            ValueError: If the inputs are not compatible sizes
+            ValueError: If the shapes are not compatible
         """
-        if self._check_valid_initialization_sizes(transition_operator,
-                                                  measurement_operator,
-                                                  noise_covariance_system,
-                                                  noise_covariance_measurement,
-                                                  state_mean,
-                                                  state_covariance):
-            raise ValueError("Incompatible System Component Dimensionalities")
-            
+        if not self._check_valid_initialization_sizes(
+                                                transition_operator,
+                                                measurement_operator,
+                                                noise_covariance_system,
+                                                noise_covariance_measurement):
+            raise ValueError("Incompatible Linear System Shape")
 
         self.transition_operator = transition_operator
         self.measurement_operator = measurement_operator
         self.noise_covariance_system = noise_covariance_system
         self.noise_covariance_measurement = noise_covariance_measurement
+
+
+    def _check_valid_initialization_sizes(self,
+                 transition_operator: npt.NDArray,
+                 measurement_operator: npt.NDArray,
+                 noise_covariance_system: npt.NDArray,
+                 noise_covariance_measurement: npt.NDArray,
+        ) -> bool:
+        """Checks for compatible sizes in initialization
+
+        See `__init__` for more details on requirements.
+        """
+
+        if (len(transition_operator.shape) != 2 
+            or len(measurement_operator.shape) != 2
+            or len(noise_covariance_system.shape) != 2
+            or len(noise_covariance_measurement.shape) != 2):
+            return False
+
+        out = transition_operator.shape[0] == transition_operator.shape[1]
+        out &= transition_operator.shape[0] == measurement_operator.shape[1]
+        out &= transition_operator.shape[0] == noise_covariance_system.shape[0]
+
+        out &= measurement_operator.shape[0] == noise_covariance_measurement.shape[0]
+        
+        out &= noise_covariance_system.shape[0] == noise_covariance_system.shape[1]
+
+        out &= noise_covariance_measurement.shape[0] == noise_covariance_measurement.shape[0]
+
+        return out
+
+
+    def next_state(self, current_state: npt.NDArray) -> npt.NDArray:
+        return self.transition_operator @ current_state
+
+
+    def observe(self, current_state: npt.NDArray) -> npt.NDArray:
+        return self.measurement_operator @ current_state
+
+
+    def get_transition_jacobian(self, current_state: npt.NDArray) -> npt.NDArray:
+        return self.transition_operator
+
+
+    def get_observation_jacobian(self, current_state: npt.NDArray) -> npt.NDArray:
+        return self.measurement_operator
+
+
+class ExtendedKalmanFilter:
+    """Extended Kalman Filter for application to nonlinear systems
+
+    Represents and extended Kalman filter constructed through a linearization
+    of a nonlinear system.
+    """
+
+    def __init__(self,
+                 system_model: StateSpaceModel,
+                 state_mean: npt.NDArray,
+                 state_covariance: npt.NDArray):
+        """Initialize a Kalman Filter given system dynamics and initialization
+
+        Args:
+            transition_operator: Function advancing the state by a time step.
+            transition_jacobian: Function constructing Jacobians of the 
+                transition operator.
+            measurement_operator: Construct the observation given the state.
+            measurement_jacobian: Function constructing Jacobian of the
+                measurement operator.
+            noise_covariance_system: System noise covariance, d by d 
+            noise_covariance_measurement: Measurement noise covariance, k by k
+            state_mean: Initial state estimate, length d
+            state_covariance: Initial estimate covariance, d by d
+        """
+        self.system_model = system_model
         self.state_estimate = state_mean
         self.state_covariance = state_covariance
+
+
+    def _prediction(self) -> tuple[npt.NDArray, npt.NDArray]:
+        """Computes the MMSE prediction and associated covariance
+
+        Compute the prediction step of the Kalman filter algorithm.
+        Does not update the internal state.
+
+        Returns:
+            `(state_prediction, covariance_prediction)`
+              where state_prediction is the updated state vector and 
+              covariance_prediction is the covariance matrix of the prediction.
+        """
+        transition_matrix = self.system_model.get_transition_jacobian(self.state_estimate)
+        state_prediction = self.system_model.next_state(self.state_estimate)
+        
+
+        covariance_prediction = transition_matrix \
+                                    @ self.state_covariance \
+                                    @ transition_matrix.T \
+                                    + self.system_model.noise_covariance_system
+
+        return state_prediction, covariance_prediction
+
+
+    def _update_prediction(self, 
+                           observation: npt.NDArray, 
+                           state_prediction: npt.NDArray, 
+                           prediction_covariance: npt.NDArray
+        ) -> tuple[npt.NDArray, npt.NDArray]:
+        """Computes the Kalman Update Step
+
+        Given an observation vector and previous 
+
+        Args:
+            observation: Current observation vector
+            state_prediction: State prediction for current timestep
+            prediction_covariance: Covariance matrix for current state prediction
+
+        Returns:
+            Updated state estimate and covariance matrix of the estimate
+        """
+        gain = self.system_model.kalman_gain(state_prediction, prediction_covariance)
+        innovation = observation - self.system_model.observe(state_prediction)
+        measurement_matrix = self.system_model.measurement_operator(state_prediction)
+
+        state_estimate_update = state_prediction + gain @ innovation
+
+        state_covariance_update = prediction_covariance \
+                - gain @ measurement_matrix @ prediction_covariance
+
+        return state_estimate_update, state_covariance_update
+
+
+
 
 
 class KalmanFilter:
